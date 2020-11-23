@@ -1,7 +1,7 @@
 """
 Author: Lin Sze Khoo
 Created on: 21/11/2020
-Last modified on: 22/11/2020
+Last modified on: 23/11/2020
 Description: This program is a solo terminal scrabble game. Run the program and start playing.
 """
 
@@ -82,6 +82,8 @@ def padString(string, c):
     :param string: String to pad
 
     :param c: Character to pad with
+
+    :returns padded string
     """
     global CELL_WIDTH
     string = str(string)
@@ -117,6 +119,8 @@ def getCurrentTiles(currentTiles):
     :param currentTiles: List to contain the generated tiles.
     """
     global USED_TILES, TILES_COUNT
+
+    # Generates a maximum of 7 tiles and uses the previous unused tiles
     while len(currentTiles) < TILES_COUNT and USED_TILES < len(TILES):
         currentTiles.append(TILES[USED_TILES])
         USED_TILES += 1
@@ -141,35 +145,66 @@ def printTiles(currentTiles):
     print("\nTiles : " + tiles)
     print("Scores: " + scores + "\n")
 
-def isLetterFromBoard(word):
+def areLettersFromBoard(letterList):
     """
-    Determines whether a specific letter already exists in the board.
+    Determines whether the letters already exists in the board.
 
-    :param letter: Letter to be checked.
+    :param letterList: A list of letters to be checked.
+
+    :returns a list of list, each consists of an alphabet with the x and y coordinates on the board, 
+    if all letters exist in the board, false otherwise.
     """
     letters = []
-    for letter in word:
+    # Ensures that the tiles for all the letters are found
+    foundLetters = [False for _ in range(len(letterList))]
+
+    for m in range(len(letterList)):
         for i in range(len(BOARD)):
             for j in range(len(BOARD)):
-                if BOARD[i][j] == letter:
-                    if not [letter, i, j] in letters:
-                        letters.append([letter, i, j])
+                if BOARD[i][j] == letterList[m]:
+                    # More than one tile for a letter might exist
+                    if not [letterList[m], i, j] in letters:
+                        foundLetters[m] = True
+                        letters.append([letterList[m], i, j])
     
     if (len(letters) == 0):
         return False
-    return letters
+    else:
+        try:
+            foundLetters.index(False)
+            return False
+        except ValueError:
+            return letters
 
 def canBeMadeWithTiles(word, currentTiles):
+    """
+    Determines whether the word can be constructed using the tiles given.
+
+    :param word: A word string to be checked.
+    
+    :param currentTiles: A list of tiles to be checked against.
+
+    :returns True if all of the words can be constructed with the given tiles, otherwise
+    returns a list of tiles to be checked against the board and another with the tiles to be used.
+    """
     tilesToCompare = currentTiles.copy()
+    toCheckInBoard = []
+    tilesToUse = []
+
     for letter in word:
         try:
             tilesToCompare.index(letter)
             tilesToCompare.remove(letter)
+            tilesToUse.append(letter)
         except ValueError:
-            return False
+            toCheckInBoard.append(letter)
+    
+    if (len(toCheckInBoard) > 0):
+        return [toCheckInBoard, tilesToUse]
+
     return True
 
-def wordIsValid(word, currentTiles):
+def wordIsValid(word, currentTiles, firstMove):
     """
     Determines whether the input word is valid.
 
@@ -177,6 +212,10 @@ def wordIsValid(word, currentTiles):
     uses letters from the current tiles or existing ones on the board.
 
     :param currentTiles: Tiles to be used in the current turn.
+
+    :param firstMove: Boolean of whether the current turn is the first move.
+
+    :returns True if the word only contains letters from the given tiles or existing tiles from the board.
     """
     # Word should not contain number, white space or special characters
     if not word.isalpha():
@@ -188,11 +227,24 @@ def wordIsValid(word, currentTiles):
     except ValueError:
         return False
     
-    if not canBeMadeWithTiles(word, currentTiles):
-        if not isLetterFromBoard(word):
-            return False
-    
-    return True
+    # Word in the first move should not contain any external tiles.
+    if firstMove:
+        if canBeMadeWithTiles(word, currentTiles):
+            return True
+        return False
+
+    # Following move must use given tiles and at least one existing tile
+    allLettersFromTiles = canBeMadeWithTiles(word, currentTiles)
+    if (allLettersFromTiles == True):
+        return False
+
+    elif isinstance(allLettersFromTiles, list):
+        existingTiles = areLettersFromBoard(allLettersFromTiles[0])
+
+        if isinstance(existingTiles, list):
+            return True
+
+    return False
 
 def locationValidFormat(loc):
     """
@@ -200,6 +252,10 @@ def locationValidFormat(loc):
     Returns a list of [int, int, String] of the split coordinates.
 
     :param loc: Location string with the format of "_:_:H" or "_:_:V".
+
+    :returns a list of split location if the input is a valid location.
+
+    :raises AssertionError when the coordinates are not numeric or the direction is invalid.
     """
     loc = loc.split(":")
     assert len(loc) == 3, "Location should be in the form of _:_:H or _:_:V !"
@@ -229,6 +285,10 @@ def locationIsValid(loc, word, currentTiles, firstMove):
     :param currentTiles: List of tiles to be used in the current turn.
 
     :param firstMove: Boolean of whether the current turn is the first move.
+
+    :returns True if the location is valid and word is successfully placed into the board.
+
+    :raises AssertionError if the location or the word is out of the range of the board.
     """
     loc = locationValidFormat(loc)
 
@@ -254,16 +314,21 @@ def placeTilesOnBoard(loc, word, currentTiles, firstMove):
     :param currentTiles: List of tiles to be used in the current turn.
 
     :param firstMove: Boolean of whether the current turn is the first move.
+
+    :raises TilesError if an existing tile is overwritten, an existing tile is not used,
+    or when neither an existing nor a given tile is used.
     """
     global BOARD_OCCUPIED_TILES
-    existingTiles = []
+    existingTiles = []  # Keeps track of existing tile to avoid counting the scores in
 
     if loc[2] == "H":
         row = loc[0] - 1
         startCol = loc[1] - 1
         endCol = loc[1] + len(word) - 2
         wordIndex = 0
+
         for i in range(startCol, endCol + 1):
+            # Ensures that no existing tile is overwritten
             if (BOARD[row][i] != ""):
                 if (BOARD[row][i] != word[wordIndex]):
                     raise exception.TilesError("You must not overwrite existing tiles on the board!")
@@ -273,7 +338,9 @@ def placeTilesOnBoard(loc, word, currentTiles, firstMove):
                 try:
                     currentTiles.remove(word[wordIndex])
                     BOARD_OCCUPIED_TILES += 1
-                # A special case where an existing tile seems to be used but is actually not
+
+                # A special case where an existing tile seems to be used but is actually not.
+                # The tile exist in the board but is at a different location.
                 except ValueError:
                     if len(existingTiles) > 0:
                         for i in range(startCol, startCol + wordIndex):
@@ -303,7 +370,9 @@ def placeTilesOnBoard(loc, word, currentTiles, firstMove):
         startRow = loc[0] - 1
         endRow = loc[0] + len(word) - 2
         wordIndex = 0
+
         for i in range(startRow, endRow + 1):
+            # Ensures that no existing tile is overwritten
             if (BOARD[i][col] != ""):
                 if (BOARD[i][col] != word[wordIndex]):
                     raise exception.TilesError("You must not overwrite existing tiles on the board!")
@@ -313,7 +382,9 @@ def placeTilesOnBoard(loc, word, currentTiles, firstMove):
                 try:
                     currentTiles.remove(word[wordIndex])
                     BOARD_OCCUPIED_TILES += 1
-                # A special case where an existing tile seems to be used but is actually not
+
+                # A special case where an existing tile seems to be used but is actually not.
+                # The tile exist in the board but is at a different location.
                 except ValueError:
                     if len(existingTiles) > 0:
                         for i in range(startRow, startRow + wordIndex):
@@ -347,6 +418,8 @@ def getCurrentScore(word, existingTiles):
     :param word: Word string for the current move.
 
     :param existingTiles: A list of existing tiles used.
+
+    :returns score for the current word.
     """
     score = 0
     for letter in word:
@@ -372,7 +445,20 @@ def printScore(word, existingTiles):
     TOTAL_SCORE += currentScore
     print("Total score: " + str(TOTAL_SCORE))
 
-def getLocationWithBestScore(word, existingTiles, firstMove):
+def getLocationWithBestScore(word, existingTiles, newTiles, firstMove):
+    """
+    Looks for valid location with the highest score to fit the given word into the board.
+
+    :param word: A word string to fit into the board.
+    
+    :param existingTiles: A list of existing tiles on the board which should be used.
+
+    :param newTiles: A list of tiles which are supposed to make up the word other than those on the board.
+    
+    :param firstMove: Boolean of whether the current turn is the first move.
+
+    :returns: None if no location is found, otherwise returns a list with location string with its score.
+    """
     if firstMove:
         if (len(word) <= len(BOARD)):
             return ["1:1:H", getCurrentScore(word, [])]
@@ -382,40 +468,72 @@ def getLocationWithBestScore(word, existingTiles, firstMove):
         bestScore = 0
         bestLocation = ""
         usedTiles = []
+
         # Attempt to place word into the board using existing tiles
         for letterLoc in existingTiles:
             for i in range(len(word)):
                 if (word[i] == letterLoc[0]):
                     if (letterLoc[1] - i < 0 and letterLoc[2] - i < 0):
                         continue
-
+                    
+                    # Attempt to place word horizontally
                     elif letterLoc[1] - i >= 0 and letterLoc[1] - i + len(word) - 1 < len(BOARD):
                         wordIndex = 0
                         for j in range(letterLoc[1] - i, letterLoc[1] - i + len(word)):
+                            # If an existing tile is overwritten
                             if (BOARD[j][letterLoc[2]] != "" and BOARD[j][letterLoc[2]] != word[wordIndex]):
-                                break 
+                                break
+
+                            # If an existing tile is used
                             elif BOARD[j][letterLoc[2]] != "":
                                 usedTiles.append(word[wordIndex])
-                            wordIndex += 1
+                                wordIndex += 1
+                            
+                            # If a tile given is used
+                            elif word[wordIndex] in newTiles:
+                                newTiles.remove(word[wordIndex])
+                                wordIndex += 1
+                            
+                            # The tile is from the board but at another position
+                            else:
+                                break
+                        
+                        # Successful attempt
                         if wordIndex == len(word):
                             currentScore = getCurrentScore(word, usedTiles)
                             if (currentScore > bestScore):
                                 bestScore = currentScore
                                 bestLocation = str(letterLoc[1] - i + 1) + ":" + str(letterLoc[2] + 1) + ":V"
-                        
+                    
+                    # Attempt to place word vertically
                     elif letterLoc[2] - i >= 0 and letterLoc[2] - i + len(word) - 1 < len(BOARD):
                         wordIndex = 0
                         for j in range(letterLoc[2] - i, letterLoc[2] - i + len(word)):
+                            # If an existing tile is overwritten
                             if (BOARD[letterLoc[1]][j] != "" and BOARD[letterLoc[1]][j] != word[wordIndex]):
-                                continue 
+                                break
+
+                            # If an existing tile is used
                             elif BOARD[letterLoc[1]][j] != "":
                                 usedTiles.append(word[wordIndex])
+                                wordIndex += 1
+
+                            # If a tile given is used
+                            elif word[wordIndex] in newTiles:
+                                wordIndex += 1
+                            
+                            # The tile is from the board but at another position
+                            else:
+                                break
+                        
+                        # Successful attempt
                         if wordIndex == len(word):
                             currentScore = getCurrentScore(word, usedTiles)
                             if (currentScore > bestScore):
                                 bestScore = currentScore
                                 bestLocation = str(letterLoc[1] + 1) + ":" + str(letterLoc[2] - i + 1) + ":H"
-
+        
+        # No valid location is found
         if bestScore == 0:
             return None
         return [bestLocation, bestScore]
@@ -427,24 +545,39 @@ def getCurrentBest(currentTiles, firstMove):
     :param currentTiles: List of tiles to be used in the current turn.
 
     :param firstMove: Boolean of whether the current turn is the first move.
+
+    :returns a list consisting of word with maximum score, the score, and its location in the board.
     """
-    bestWord = ""
+    bestWord = None
     bestScore = 0
     bestLocation = None
 
     for validWord in DICTIONARY:
-        if canBeMadeWithTiles(validWord, currentTiles):
+        # If the current turn is the first move
+        if firstMove:
+            if isinstance(canBeMadeWithTiles(validWord, currentTiles), list):
+                continue
             existingTiles = []
-            if not firstMove:
-                existingTiles = isLetterFromBoard(validWord)
-                if not existingTiles:
+            newTiles = []
+
+        else:
+            checkedTiles = canBeMadeWithTiles(validWord, currentTiles)
+            if (checkedTiles == True):
+                continue
+            elif isinstance(checkedTiles, list):
+                existingTiles = areLettersFromBoard(checkedTiles[0])
+                if not isinstance(existingTiles, list):
                     continue
-            locationWithScore = getLocationWithBestScore(validWord, existingTiles, firstMove)
-            if locationWithScore is not None:
-                if locationWithScore[1] > bestScore:
-                    bestWord = validWord
-                    bestScore = locationWithScore[1]
-                    bestLocation = locationWithScore[0]
+                newTiles = checkedTiles[1]
+            else:
+                continue
+        
+        locationWithScore = getLocationWithBestScore(validWord, existingTiles, newTiles, firstMove)
+        if locationWithScore is not None:
+            if locationWithScore[1] > bestScore:
+                bestWord = validWord
+                bestScore = locationWithScore[1]
+                bestLocation = locationWithScore[0]
 
     return [bestWord, bestScore, bestLocation]
 
@@ -481,6 +614,11 @@ def playGame():
         [bestWord, bestScore, bestLocation] = getCurrentBest(currentTiles, move == 1)
         currentTilesCopy = currentTiles.copy()
 
+        # No possible move is found
+        if (bestWord is None):
+            print("No possible move found!")
+            break
+
         # Prompts for word
         validWord = False
         while not validWord:
@@ -488,7 +626,8 @@ def playGame():
             if (userInput == "***"):
                 quit = True
                 break
-            validWord = wordIsValid(userInput, currentTiles)
+
+            validWord = wordIsValid(userInput, currentTiles, move == 1)
             currentWord = userInput
             if (not validWord):
                 print("Invalid word! You must use letters from the tiles!")
@@ -500,6 +639,7 @@ def playGame():
             if (userInput == "***"):
                 quit = True
                 break
+
             try:
                 validLocation = locationIsValid(userInput, currentWord, currentTiles, move == 1)
             # Assertion error is raised if requires new location input
